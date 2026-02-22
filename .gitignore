@@ -10,3 +10,14 @@ backend/.env
 # Frontend
 frontend/node_modules
 frontend/.env
+
+# Test / scratch files
+test_symptoms.js
+test_symptoms_json.js
+output.txt
+
+# Editor
+.vscode
+.idea
+*.swp
+*.swo
