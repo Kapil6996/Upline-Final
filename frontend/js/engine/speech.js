@@ -147,93 +147,150 @@ const SpeechEngine = {
 
 /* ===== Text-to-Speech (TTS) Engine ===== */
 const TTS = {
-    synth: window.speechSynthesis,
     isSpeaking: false,
     currentUtterance: null,
+    _voicesLoaded: false,
+
+    /**
+     * Use a getter so we always get the live speechSynthesis reference,
+     * even if it wasn't available at script-load time.
+     */
+    get synth() {
+        return window.speechSynthesis || null;
+    },
+
+    /** Returns true if TTS is supported in this browser. */
+    isSupported() {
+        return !!window.speechSynthesis;
+    },
 
     /**
      * Get preferred voice for a language code.
+     * Falls back through: exact match → language prefix → default → first available.
      */
     getVoice(langCode) {
         if (!this.synth) return null;
         const voices = this.synth.getVoices();
+        if (!voices.length) return null;
 
-        // Try exact match
         let voice = voices.find(v => v.lang === langCode);
         if (voice) return voice;
 
-        // Try loose match (e.g., 'hi' for 'hi-IN')
         const shortLang = langCode.split('-')[0];
         voice = voices.find(v => v.lang.startsWith(shortLang));
         if (voice) return voice;
 
-        // Fallback to default
-        return voices.find(v => v.default) || voices[0];
+        return voices.find(v => v.default) || voices[0] || null;
     },
 
-    /**
-     * Map UPLINE language settings to TTS BCP-47 codes.
-     */
+    /** Map UPLINE language codes to BCP-47 TTS codes */
     mapLanguageCode(appLang) {
         const map = {
             'en-IN': 'en-IN',
             'hi-IN': 'hi-IN',
             'bn-IN': 'bn-IN',
-            'ta-IN': 'ta-IN'
+            'ta-IN': 'ta-IN',
+            'te-IN': 'te-IN'
         };
-        return map[appLang] || 'en-IN';
+        return map[appLang] || 'en-US';
     },
 
     /**
-     * Speak text
-     * @param {string} text - Text to read aloud
-     * @param {function} onEnd - Callback when finished reading
+     * Wait for voices to load (they load asynchronously on many browsers).
+     * Resolves immediately if voices are already available.
      */
-    speak(text, onEnd = null) {
-        if (!this.synth) return;
+    _waitForVoices() {
+        return new Promise((resolve) => {
+            if (!this.synth) { resolve([]); return; }
+            const voices = this.synth.getVoices();
+            if (voices.length > 0) { resolve(voices); return; }
+            // Voices not ready yet — wait for the event
+            const handler = () => {
+                resolve(this.synth.getVoices());
+                this.synth.removeEventListener('voiceschanged', handler);
+            };
+            this.synth.addEventListener('voiceschanged', handler);
+            // Safety timeout — give up waiting after 2 s and speak with default voice
+            setTimeout(() => {
+                this.synth.removeEventListener('voiceschanged', handler);
+                resolve(this.synth.getVoices());
+            }, 2000);
+        });
+    },
+
+    /**
+     * Speak text. Always calls onEnd when finished OR on failure.
+     * This is important because callers (e.g. voice.js) chain analyzeSymptoms() in onEnd.
+     *
+     * @param {string} text - Text to read aloud
+     * @param {function} [onEnd] - Called when speech ends OR on any error
+     */
+    async speak(text, onEnd = null) {
+        const done = () => { if (onEnd) onEnd(); };
+
+        if (!this.isSupported()) {
+            console.warn('[TTS] speechSynthesis not supported — skipping TTS');
+            done(); // always fire callback so downstream logic still runs
+            return;
+        }
 
         // Cancel any ongoing speech
         this.stop();
 
-        // Get language from settings
-        const appLang = Storage.getLanguage() || 'en-IN';
+        // Wait for voices to be ready
+        await this._waitForVoices();
+
+        const appLang = (typeof Storage !== 'undefined' && Storage.getLanguage)
+            ? Storage.getLanguage() || 'en-IN'
+            : 'en-IN';
         const ttsLang = this.mapLanguageCode(appLang);
 
-        this.currentUtterance = new SpeechSynthesisUtterance(text);
-        this.currentUtterance.lang = ttsLang;
-        this.currentUtterance.rate = 0.9; // Slightly slower for clarity in emergencies
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = ttsLang;
+        utterance.rate = 0.92;
+        utterance.pitch = 1;
+        utterance.volume = 1;
 
         const voice = this.getVoice(ttsLang);
-        if (voice) {
-            this.currentUtterance.voice = voice;
+        if (voice) utterance.voice = voice;
+
+        this.currentUtterance = utterance;
+
+        utterance.onstart = () => { this.isSpeaking = true; };
+
+        utterance.onend = () => {
+            this.isSpeaking = false;
+            this.currentUtterance = null;
+            done();
+        };
+
+        utterance.onerror = (e) => {
+            console.warn('[TTS] Error:', e.error || e);
+            this.isSpeaking = false;
+            this.currentUtterance = null;
+            done(); // fire callback even on error so analyzeSymptoms still runs
+        };
+
+        try {
+            this.synth.speak(utterance);
+
+            // Chrome bug: speechSynthesis sometimes stalls on long texts.
+            // Workaround: call resume() 100ms after speaking.
+            setTimeout(() => {
+                if (this.synth && this.isSpeaking) this.synth.resume();
+            }, 100);
+        } catch (err) {
+            console.warn('[TTS] speak() threw:', err);
+            done();
         }
-
-        this.currentUtterance.onstart = () => {
-            this.isSpeaking = true;
-        };
-
-        this.currentUtterance.onend = () => {
-            this.isSpeaking = false;
-            this.currentUtterance = null;
-            if (onEnd) onEnd();
-        };
-
-        this.currentUtterance.onerror = (e) => {
-            console.warn('TTS Error:', e);
-            this.isSpeaking = false;
-            this.currentUtterance = null;
-        };
-
-        this.synth.speak(this.currentUtterance);
     },
 
-    /**
-     * Stop speaking
-     */
+    /** Cancel any ongoing speech */
     stop() {
         if (!this.synth) return;
-        this.synth.cancel();
+        try { this.synth.cancel(); } catch (e) { /* ignore */ }
         this.isSpeaking = false;
         this.currentUtterance = null;
     }
 };
+
