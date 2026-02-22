@@ -170,12 +170,17 @@ function toggleMic() {
     SpeechEngine.onError = (error) => {
       if (error === 'not-allowed') {
         if (status) status.textContent = '⚠ Microphone access denied';
-        showToast("Microphone permission denied");
+        showToast('⚠ Microphone permission denied. Allow mic in browser settings.');
         stopRecordingUI();
       } else if (error === 'network') {
-        if (status) status.textContent = '⚠ Offline: Speech requires network';
-        showToast("Web Speech API requires an internet connection");
+        // STT (speech-to-text) requires internet — Chrome sends audio to Google.
+        // TTS + symptom extraction still work offline.
+        // Gracefully fall back to manual text input.
         stopRecordingUI();
+        _showOfflineFallback();
+      } else if (error === 'no-speech') {
+        // Silence — don't crash, just keep listening or reset
+        if (status) status.textContent = 'TAP TO START LISTENING';
       } else {
         if (status) status.textContent = `⚠ Error: ${error}`;
       }
@@ -209,6 +214,63 @@ function stopRecordingUI() {
   if (waveform) waveform.classList.remove('active');
   if (status) status.textContent = 'TAP TO START LISTENING';
 }
+
+/**
+ * Called when STT fails due to no internet.
+ * Microphone → text (STT) needs Google's servers.
+ * TTS + symptom extraction are 100% offline.
+ * Guide the user to type instead.
+ */
+function _showOfflineFallback() {
+  const status = document.getElementById('voice-status');
+  const manualInput = document.getElementById('manual-input');
+  const analyzeBtn = document.getElementById('analyze-btn');
+
+  // Update mic status label
+  if (status) {
+    status.textContent = '📝 TYPE SYMPTOMS BELOW';
+    status.style.color = 'var(--color-gold)';
+  }
+
+  // Show an inline banner above the text box
+  const existingBanner = document.getElementById('offline-stt-banner');
+  if (!existingBanner && manualInput) {
+    const banner = document.createElement('div');
+    banner.id = 'offline-stt-banner';
+    banner.style.cssText = `
+      background: rgba(255,193,7,0.12);
+      border: 1px solid var(--color-gold);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: var(--font-display);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      color: var(--color-gold);
+      text-align: center;
+      margin-bottom: 8px;
+    `;
+    banner.innerHTML = `
+      🎙 Microphone requires internet (Chrome STT uses Google servers).<br>
+      <span style="opacity:0.8;">Type symptoms below — TTS readback &amp; analysis still work offline.</span>
+    `;
+    manualInput.parentNode.insertBefore(banner, manualInput);
+  }
+
+  // Pulse the text input to draw attention
+  if (manualInput) {
+    manualInput.style.transition = 'border-color 0.3s';
+    manualInput.style.borderColor = 'var(--color-gold)';
+    manualInput.focus();
+    setTimeout(() => { manualInput.style.borderColor = ''; }, 3000);
+  }
+
+  // Make sure analyze button is enabled
+  if (analyzeBtn) {
+    analyzeBtn.disabled = false;
+    analyzeBtn.textContent = '⬡ Analyze';
+  }
+}
+
 
 function switchLang(lang) {
   Storage.setLanguage(lang);
