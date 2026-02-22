@@ -1,24 +1,32 @@
 {
-    "version": 2,
-    "name": "upline-frontend",
-    "builds": [
+    "headers": [
         {
-            "src": "index.html",
-            "use": "@vercel/static"
-        }
-    ],
-    "routes": [
-        {
-            "src": "/sw.js",
-            "headers": {
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Service-Worker-Allowed": "/"
-            },
-            "dest": "/sw.js"
+            "source": "/sw.js",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-cache, no-store, must-revalidate"
+                },
+                {
+                    "key": "Service-Worker-Allowed",
+                    "value": "/"
+                }
+            ]
         },
         {
-            "src": "/(.*)",
-            "dest": "/$1"
+            "source": "/(js|css|data)/(.*)",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "public, max-age=31536000, immutable"
+                }
+            ]
+        }
+    ],
+    "rewrites": [
+        {
+            "source": "/((?!api|sw\\.js|css|js|data|manifest\\.json).*)",
+            "destination": "/index.html"
         }
     ]
 }
