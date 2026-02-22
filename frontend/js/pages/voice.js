@@ -131,7 +131,7 @@ function toggleMic() {
       if (transcriptEl) {
         transcriptEl.innerHTML = result.full || '<span style="color:var(--text-muted);font-style:italic;">Listening...</span>';
       }
-      if (manualInput) manualInput.value = result.final || '';
+      if (manualInput) manualInput.value = result.full || '';
 
       // Confidence signal: estimate by text length
       const quality = Math.min(100, Math.max(10, result.full.length * 1.5));
@@ -146,12 +146,38 @@ function toggleMic() {
         return;
       }
       stopRecordingUI();
+
+      // After recording stops: read back what we heard, then auto-analyze
+      const captured = SpeechEngine.getTranscript();
+      if (!captured) return;
+
+      const status = document.getElementById('voice-status');
+
+      if (TTS && typeof TTS.speak === 'function') {
+        if (status) status.textContent = '🔊 PLAYING BACK — PLEASE WAIT…';
+        TTS.speak(`I heard: ${captured}`, () => {
+          // TTS finished → auto trigger analysis
+          if (status) status.textContent = '⏳ EXTRACTING SYMPTOMS…';
+          analyzeSymptoms();
+        });
+      } else {
+        // No TTS support — go straight to analysis
+        if (status) status.textContent = '⏳ EXTRACTING SYMPTOMS…';
+        analyzeSymptoms();
+      }
     };
 
     SpeechEngine.onError = (error) => {
       if (error === 'not-allowed') {
         if (status) status.textContent = '⚠ Microphone access denied';
+        showToast("Microphone permission denied");
         stopRecordingUI();
+      } else if (error === 'network') {
+        if (status) status.textContent = '⚠ Offline: Speech requires network';
+        showToast("Web Speech API requires an internet connection");
+        stopRecordingUI();
+      } else {
+        if (status) status.textContent = `⚠ Error: ${error}`;
       }
     };
 
@@ -223,7 +249,8 @@ function clearVoiceInput() {
 
 async function analyzeSymptoms() {
   const manualInput = document.getElementById('manual-input');
-  const inputText = manualInput?.value?.trim() || SpeechEngine.getTranscript();
+  const speechText = SpeechEngine.getTranscript();
+  const inputText = (manualInput?.value?.trim()) || speechText || '';
 
   if (!inputText) {
     showToast('⚠ Please describe your symptoms first');
@@ -240,27 +267,35 @@ async function analyzeSymptoms() {
   const btn = document.getElementById('analyze-btn');
   if (btn) { btn.textContent = '⏳ Analyzing...'; btn.disabled = true; }
 
-  await SymptomEngine.init();
-  await TriageEngine.init();
+  try {
+    await SymptomEngine.init();
+    await TriageEngine.init();
 
-  const symptoms = SymptomEngine.extract(inputText);
-  const result = TriageEngine.evaluate(symptoms);
+    const symptoms = SymptomEngine.extract(inputText);
+    console.log('[UPLINE] Input:', inputText, '| Extracted:', symptoms);
 
-  // Track stats
-  if (!navigator.onLine || localStorage.getItem('upline_forced_offline') === 'true') {
-    Storage.incrementStat('offlineUses');
+    const result = TriageEngine.evaluate(symptoms);
+
+    // Track stats
+    if (!navigator.onLine || localStorage.getItem('upline_forced_offline') === 'true') {
+      Storage.incrementStat('offlineUses');
+    }
+
+    Storage.addHistory({
+      symptoms: inputText.substring(0, 100),
+      urgency: result.urgency,
+      detectedSymptoms: symptoms,
+      resultData: result
+    });
+
+    window._lastTriageResult = result;
+    window._lastSymptoms = symptoms;
+    window._lastInputText = inputText;
+
+    Router.navigate('/results');
+  } catch (err) {
+    console.error('[UPLINE] Analysis error:', err);
+    if (btn) { btn.textContent = '⬡ Analyze'; btn.disabled = false; }
+    showToast('⚠ Analysis failed. Please try again.');
   }
-
-  Storage.addHistory({
-    symptoms: inputText.substring(0, 100),
-    urgency: result.urgency,
-    detectedSymptoms: symptoms,
-    resultData: result
-  });
-
-  window._lastTriageResult = result;
-  window._lastSymptoms = symptoms;
-  window._lastInputText = inputText;
-
-  Router.navigate('/results');
 }

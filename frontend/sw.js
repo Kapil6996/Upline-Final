@@ -1,5 +1,5 @@
 /* ===== UPLINE Service Worker — Cache-First Offline Strategy ===== */
-const CACHE_NAME = 'upline-v18';
+const CACHE_NAME = 'upline-v24';
 
 // Forced-offline mode flag — toggled by postMessage from the page
 let forcedOffline = false;
@@ -16,6 +16,10 @@ self.addEventListener('message', (event) => {
             });
         });
     }
+    // Allow page to force new SW to take over immediately
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
 });
 
 const ASSETS_TO_CACHE = [
@@ -26,24 +30,25 @@ const ASSETS_TO_CACHE = [
     './css/base.css',
     './css/components.css',
     './css/pages.css',
-    './js/utils/router.js',
-    './js/utils/storage.js',
-    './js/engine/symptoms.js',
-    './js/engine/triage.js',
-    './js/engine/speech.js',
-    './js/pages/splash.js',
-    './js/pages/dashboard.js',
-    './js/pages/voice.js',
-    './js/pages/results.js',
-    './js/pages/firstaid.js',
-    './js/pages/emergency.js',
-    './js/pages/network.js',
-    './js/pages/hospitals.js',
-    './js/pages/settings.js',
-    './js/pages/medicalid.js',
-    './js/pages/vault.js',
-    './js/pages/map.js',
-    './js/app.js',
+    './js/utils/router.js?v=24',
+    './js/utils/storage.js?v=24',
+    './js/engine/symptoms.js?v=24',
+    './js/engine/triage.js?v=24',
+    './js/engine/speech.js?v=24',
+    './js/pages/splash.js?v=24',
+    './js/pages/dashboard.js?v=24',
+    './js/pages/voice.js?v=24',
+    './js/pages/results.js?v=24',
+    './js/pages/firstaid.js?v=24',
+    './js/pages/emergency.js?v=24',
+    './js/pages/network.js?v=24',
+    './js/pages/hospitals.js?v=24',
+    './js/pages/settings.js?v=24',
+    './js/pages/medicalid.js?v=24',
+    './js/pages/vault.js?v=24',
+    './js/pages/map.js?v=24',
+    './js/pages/triage-chat.js?v=24',
+    './js/app.js?v=24',
     './data/symptoms.json',
     './data/rules.json',
     './data/firstaid.json',

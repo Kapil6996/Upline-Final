@@ -2,7 +2,7 @@
 const Router = {
   routes: {},
   currentPage: null,
-  
+
   register(path, renderFn) {
     this.routes[path] = renderFn;
   },
@@ -13,18 +13,14 @@ const Router = {
 
   init() {
     window.addEventListener('hashchange', () => this._handleRoute());
-    // Initialize with current hash or default
-    if (!window.location.hash) {
-      window.location.hash = '#/dashboard';
-    } else {
-      this._handleRoute();
-    }
+    // Always open dashboard on app launch
+    window.location.hash = '#/dashboard';
   },
 
   _handleRoute() {
     const hash = window.location.hash || '#/dashboard';
     const path = hash.replace('#', '');
-    
+
     const renderFn = this.routes[path];
     if (renderFn) {
       this._transition(path, renderFn);
@@ -37,7 +33,7 @@ const Router = {
   _transition(path, renderFn) {
     const app = document.getElementById('app');
     const pageContainer = document.getElementById('page-container');
-    
+
     if (!pageContainer) return;
 
     // Remove active from all pages

@@ -200,11 +200,31 @@ async function initApp() {
         hideSplash();
     }, 2000);
 
-    // Register service worker
+    // Register service worker — unregister any stale SW first
     if ('serviceWorker' in navigator) {
         try {
-            const reg = await navigator.serviceWorker.register('./sw.js');
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (const reg of registrations) {
+                // If the SW is NOT the current sw.js or has an old cache, unregister it
+                const swUrl = reg.active?.scriptURL || '';
+                if (!swUrl.includes('sw.js')) {
+                    await reg.unregister();
+                }
+            }
+            const reg = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
             console.log('Service Worker registered:', reg.scope);
+            // Force the new SW to take control immediately
+            if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+            reg.addEventListener('updatefound', () => {
+                const newSW = reg.installing;
+                if (newSW) {
+                    newSW.addEventListener('statechange', () => {
+                        if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+                            newSW.postMessage({ type: 'SKIP_WAITING' });
+                        }
+                    });
+                }
+            });
         } catch (e) {
             console.warn('Service Worker registration failed:', e);
         }

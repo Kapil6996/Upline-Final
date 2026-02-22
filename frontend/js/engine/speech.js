@@ -133,7 +133,7 @@ const SpeechEngine = {
      * Get the final transcript.
      */
     getTranscript() {
-        return this.transcript.trim();
+        return (this.transcript + ' ' + this.interimTranscript).trim();
     },
 
     /**
